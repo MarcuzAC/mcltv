@@ -1,10 +1,9 @@
 from datetime import datetime
 from typing import List
-import uuid
-
+from uuid import UUID
 from fastapi import (
     APIRouter, Depends, HTTPException, Query,
-    UploadFile, File, status
+    UploadFile, File, status, Form
 )
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +13,7 @@ from config import settings
 from database import get_db
 from models import News, User
 from schemas import NewsCreate, NewsUpdate, NewsResponse, NewsListResponse
-from auth import get_current_user, get_current_subscribed_user  # Updated import
+from auth import get_current_user, get_current_subscribed_user
 from utils import upload_news_image
 
 router = APIRouter(prefix="/news", tags=["news"])
@@ -22,7 +21,7 @@ router = APIRouter(prefix="/news", tags=["news"])
 # ─────────────────────────────
 # Utility
 # ─────────────────────────────
-async def get_news_by_id(news_id: uuid.UUID, db: AsyncSession) -> News:
+async def get_news_by_id(news_id: UUID, db: AsyncSession) -> News:
     result = await db.execute(select(News).where(News.id == news_id))
     news = result.scalars().first()
     if not news:
@@ -35,16 +34,27 @@ async def get_news_by_id(news_id: uuid.UUID, db: AsyncSession) -> News:
 # ─────────────────────────────
 @router.post("/", response_model=NewsResponse)
 async def create_news(
-    news_data: NewsCreate,
+    title: str = Form(..., min_length=1, max_length=255),
+    content: str = Form(..., min_length=1),
+    is_published: bool = Form(False),
+    image: UploadFile = File(...),  # Required image file
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # Regular auth check
+    current_user: User = Depends(get_current_user),
 ):
-    """Create a new news article"""
+    """Create a new news article with a required title, content, and image."""
+    # Validate image file
+    if not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    # Upload the image and get the URL
+    image_url = await upload_news_image(image)
+
+    # Create the news article
     db_news = News(
-        title=news_data.title,
-        content=news_data.content,
-        image_url=news_data.image_url,
-        is_published=news_data.is_published,
+        title=title,
+        content=content,
+        image_url=image_url,
+        is_published=is_published,
         author_id=current_user.id,
         created_at=datetime.utcnow()
     )
@@ -63,9 +73,9 @@ async def get_news_list(
     size: int = Query(10, gt=0, le=100),
     published_only: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user),  # Subscription check
+    current_user: User = Depends(get_current_subscribed_user),
 ):
-    """Get paginated list of news items (subscribers only)"""
+    """Get paginated list of news items (subscribers only)."""
     query = select(News)
     if published_only:
         query = query.where(News.is_published == True)
@@ -84,11 +94,11 @@ async def get_news_list(
 # ─────────────────────────────
 @router.get("/{news_id}", response_model=NewsResponse)
 async def get_news(
-    news_id: uuid.UUID,
+    news_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user),  # Subscription check
+    current_user: User = Depends(get_current_subscribed_user),
 ):
-    """Get a single news item by ID (subscribers only)"""
+    """Get a single news item by ID (subscribers only)."""
     return await get_news_by_id(news_id, db)
 
 
@@ -97,19 +107,31 @@ async def get_news(
 # ─────────────────────────────
 @router.put("/{news_id}", response_model=NewsResponse)
 async def update_news(
-    news_id: uuid.UUID,
-    news_data: NewsUpdate,
+    news_id: UUID,
+    title: str | None = Form(None, min_length=1, max_length=255),
+    content: str | None = Form(None, min_length=1),
+    is_published: bool | None = Form(None),
+    image: UploadFile | None = File(None),  # Optional image update
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # Regular auth check
+    current_user: User = Depends(get_current_user),
 ):
-    """Update a news item"""
+    """Update a news item with optional image upload (authors/admins only)."""
     news = await get_news_by_id(news_id, db)
 
     if news.author_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized to update this news item")
 
-    for field, value in news_data.dict(exclude_unset=True).items():
-        setattr(news, field, value)
+    # Update fields if provided
+    if title is not None:
+        news.title = title
+    if content is not None:
+        news.content = content
+    if is_published is not None:
+        news.is_published = is_published
+    if image is not None:
+        if not image.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        news.image_url = await upload_news_image(image)
 
     news.updated_at = datetime.utcnow()
     await db.commit()
@@ -122,11 +144,11 @@ async def update_news(
 # ─────────────────────────────
 @router.delete("/{news_id}", status_code=204)
 async def delete_news(
-    news_id: uuid.UUID,
+    news_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # Regular auth check
+    current_user: User = Depends(get_current_user),
 ):
-    """Delete a news item"""
+    """Delete a news item (authors/admins only)."""
     news = await get_news_by_id(news_id, db)
 
     if news.author_id != current_user.id and not current_user.is_admin:
@@ -144,9 +166,9 @@ async def delete_news(
 async def get_latest_news(
     limit: int = Query(5, gt=0, le=20),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user),  # Subscription check
+    current_user: User = Depends(get_current_subscribed_user),
 ):
-    """Get latest news articles (subscribers only)"""
+    """Get latest news articles (subscribers only)."""
     result = await db.execute(
         select(News)
         .where(News.is_published == True)
@@ -162,9 +184,11 @@ async def get_latest_news(
 @router.post("/upload-image/")
 async def upload_news_image_endpoint(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),  # Regular auth check
+    current_user: User = Depends(get_current_user),
 ):
-    """Upload an image for a news article"""
+    """Upload an image for a news article (authors/admins only)."""
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
     image_url = await upload_news_image(file)
     return {"url": image_url}
 
@@ -179,9 +203,9 @@ async def search_news(
     size: int = Query(10, gt=0, le=100),
     published_only: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user),  # Subscription check
+    current_user: User = Depends(get_current_subscribed_user),
 ):
-    """Search news articles by title or content (subscribers only)"""
+    """Search news articles by title or content (subscribers only)."""
     q = select(News)
     if published_only:
         q = q.where(News.is_published == True)
