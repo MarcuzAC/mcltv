@@ -138,19 +138,16 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
             detail="Incorrect username or password",
         )
     
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={
             "sub": user.username,
             "email": user.email,
             "phone": user.phone_number,
-            #"user_id": str(user.id),
-            #"is_subscribed": user.is_subscribed
-        },
-        #expires_delta=access_token_expires
+            "user_id": str(user.id),
+            "is_subscribed": user.is_subscribed
+        }
     )
     return {"access_token": access_token, "token_type": "bearer"}
-
 @router.get("/user-details", response_model=UserResponse)
 async def get_user_details(current_user: User = Depends(get_current_user)):
     return current_user

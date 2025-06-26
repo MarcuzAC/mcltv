@@ -47,6 +47,8 @@ class UserResponse(UserBase):
     avatar_url: Optional[str] = Field(None, max_length=255)
     created_at: datetime
     updated_at: Optional[datetime] = None
+    is_subscribed: bool = False
+    subscription_expiry: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -102,8 +104,6 @@ class VideoResponse(VideoBase):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    user_id: uuid.UUID
-    expires_at: datetime
 
 class LikeBase(BaseModel):
     user_id: uuid.UUID

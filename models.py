@@ -82,7 +82,7 @@ class News(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String(200), nullable=False)
     content = Column(Text, nullable=False)
-    # image_url = Column(String, nullable=False)
+    image_url = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), index=True)
     updated_at = Column(DateTime, onupdate=func.now())
     is_published = Column(Boolean, default=False)
