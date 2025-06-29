@@ -6,13 +6,13 @@ from database import engine, Base
 import models
 from auth import router as auth_router
 from routers import (
-    users_router,
-    videos_router,
-    categories_router,
-    likes_router,
-    comments_router,
-    news_router,
-    subscription_router
+    users,
+    videos,
+    categories,
+    likes,
+    comments,
+    news,
+    subscription
 )
 
 app = FastAPI(
@@ -65,14 +65,14 @@ async def news_debug():
     }
 
 # Include all routers WITHOUT prefixes
-app.include_router(auth_router, tags=["auth"])
-app.include_router(users_router, tags=["users"])
-app.include_router(videos_router, tags=["videos"])
-app.include_router(categories_router, tags=["categories"])
-app.include_router(likes_router, tags=["likes"])
-app.include_router(comments_router, tags=["comments"])
-app.include_router(news_router, tags=["news"])
-app.include_router(subscription_router, tags=["subscription"])
+app.include_router(auth_router)
+app.include_router(users.router)
+app.include_router(videos.router)
+app.include_router(categories.router)
+app.include_router(likes.router)
+app.include_router(comments.router)
+app.include_router(news.router)
+app.include_router(subscription.router)
 
 # Root redirect
 @app.get("/")

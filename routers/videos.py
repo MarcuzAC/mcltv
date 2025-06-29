@@ -23,7 +23,7 @@ from vimeo_client import upload_to_vimeo, client
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
-# Create a new video with thumbnail
+# Create a new video with thumbnail (no admin restriction)
 @router.post("/", response_model=schemas.VideoResponse)
 async def create_video(
     title: str = Form(...),
@@ -31,15 +31,8 @@ async def create_video(
     file: UploadFile = File(...),
     thumbnail: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user)
+    current_user: schemas.UserResponse = Depends(get_current_user)  # just authenticated user
 ):
-    """Create a new video entry with optional thumbnail (admin only)"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can upload videos"
-        )
-
     temp_path = None
     thumbnail_path = None
     try:
@@ -143,19 +136,12 @@ async def create_video(
             except Exception as e:
                 print(f"Failed to delete thumbnail temp file: {str(e)}")
 
-# Get comprehensive dashboard stats
+# Get comprehensive dashboard stats (no admin restriction)
 @router.get("/dashboard/stats")
 async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user)
+    current_user: schemas.UserResponse = Depends(get_current_user)  # no admin check
 ):
-    """Get comprehensive dashboard statistics (admin only)"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can view dashboard stats"
-        )
-
     try:
         # Get basic counts
         total_users = await db.scalar(select(func.count(User.id)))
@@ -238,7 +224,6 @@ async def get_recent_videos(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_subscribed_user)
 ):
-    """Get most recently added videos (subscribers only)"""
     result = await db.execute(
         select(Video)
         .options(joinedload(Video.category))
@@ -260,22 +245,15 @@ async def get_recent_videos(
         for video in videos
     ]
 
-# Update a video
+# Update a video (no admin restriction)
 @router.put("/{video_id}", response_model=schemas.VideoResponse)
 async def update_video(
     video_id: uuid.UUID,
     video_update: schemas.VideoUpdate,
     thumbnail: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user)
+    current_user: schemas.UserResponse = Depends(get_current_user)  # no admin check
 ):
-    """Update video details and/or thumbnail (admin only)"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can update videos"
-        )
-
     result = await db.execute(
         select(Video).options(joinedload(Video.category)).filter(Video.id == video_id)
     )
@@ -338,20 +316,13 @@ async def update_video(
         thumbnail_url=video.thumbnail_url
     )
 
-# Delete a video
+# Delete a video (no admin restriction)
 @router.delete("/{video_id}")
 async def delete_video(
     video_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user)
+    current_user: schemas.UserResponse = Depends(get_current_user)  # no admin check
 ):
-    """Delete a video and its associated resources (admin only)"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can delete videos"
-        )
-
     try:
         # First get the video to check existence and get Vimeo ID
         result = await db.execute(
@@ -405,7 +376,6 @@ async def search_videos(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_subscribed_user)
 ):
-    """Search videos by title with optional category filtering (subscribers only)"""
     try:
         stmt = (
             select(Video)
@@ -449,7 +419,6 @@ async def read_videos(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_subscribed_user)
 ):
-    """Get paginated list of all videos with optional category filter (subscribers only)"""
     videos = await crud.get_all_videos(db, skip=skip, limit=limit, category_id=category_id)
     return videos
 
@@ -460,7 +429,6 @@ async def read_video(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_subscribed_user)
 ):
-    """Get video details by ID including like and comment counts (subscribers only)"""
     result = await db.execute(
         select(Video)
         .options(joinedload(Video.category), joinedload(Video.likes), joinedload(Video.comments))
@@ -483,14 +451,13 @@ async def read_video(
         comments_count=len(video.comments)
     )
 
-# Share video endpoint
+# Share video endpoint (public)
 @router.get("/share/{video_id}", response_class=HTMLResponse)
 async def share_video(
     video_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Generate shareable HTML page for a video (public)"""
     result = await db.execute(
         select(Video).filter(Video.id == video_id)
     )

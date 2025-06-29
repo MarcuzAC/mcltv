@@ -1,59 +1,50 @@
-from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from typing import Optional, List
 import uuid
 from datetime import datetime
-import re
+
+# ==== User Schemas ====
 
 class UserBase(BaseModel):
     email: EmailStr
-    username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_]+$")
-    first_name: str = Field(..., min_length=1, max_length=50)
-    last_name: str = Field(..., min_length=1, max_length=50)
-    phone_number: str = Field(..., min_length=10, max_length=15)
+    username: str
+    first_name: str
+    last_name: str
+    phone_number: str
 
-    @field_validator('phone_number')
-    def validate_phone_number(cls, v):
-        if not re.match(r'^\+?[0-9]{10,15}$', v):
-            raise ValueError('Invalid phone number format')
-        return v
+class UserCreate(UserBase):
+    password: str
+
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    password: Optional[str] = None
+
+class UserResponse(UserBase):
+    id: uuid.UUID
+    is_admin: bool = False
+    avatar_url: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    is_subscribed: Optional[bool] = False
+    subscription_expiry: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 class ResetPasswordRequest(BaseModel):
-    token: str = Field(..., min_length=32, max_length=32)
-    new_password: str = Field(..., min_length=8)
+    token: str
+    new_password: str
 
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
-
-class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    username: Optional[str] = Field(None, min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_]+$")
-    first_name: Optional[str] = Field(None, min_length=1, max_length=50)
-    last_name: Optional[str] = Field(None, min_length=1, max_length=50)
-    phone_number: Optional[str] = Field(None, min_length=10, max_length=15)
-    password: Optional[str] = Field(None, min_length=8)
-
-    @field_validator('phone_number')
-    def validate_phone_number(cls, v):
-        if v is not None and not re.match(r'^\+?[0-9]{10,15}$', v):
-            raise ValueError('Invalid phone number format')
-        return v
-
-class UserResponse(UserBase):
-    id: uuid.UUID
-    is_admin: bool = False
-    avatar_url: Optional[str] = Field(None, max_length=255)
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-    is_subscribed: bool = False
-    subscription_expiry: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
+# ==== Category Schemas ====
 
 class CategoryBase(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
+    name: str
 
 class CategoryCreate(CategoryBase):
     pass
@@ -61,12 +52,12 @@ class CategoryCreate(CategoryBase):
 class CategoryOut(CategoryBase):
     id: uuid.UUID
     created_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 class CategoryWithVideoCount(CategoryOut):
     video_count: int
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 class CategoryResponse(CategoryBase):
@@ -77,33 +68,39 @@ class CategoryResponse(CategoryBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+# ==== Video Schemas ====
+
 class VideoBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=100)
+    title: str
     category_id: uuid.UUID
 
 class VideoCreate(VideoBase):
     pass
 
 class VideoUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=100)
+    title: Optional[str] = None
     category_id: Optional[uuid.UUID] = None
-    thumbnail_url: Optional[str] = Field(None, max_length=255)
+    thumbnail_url: Optional[str] = None
 
 class VideoResponse(VideoBase):
     id: uuid.UUID
     created_date: datetime
-    vimeo_url: Optional[str] = Field(None, max_length=255)
-    vimeo_id: Optional[str] = Field(None, max_length=50)
-    category: Optional[str] = Field(None, max_length=100)
-    thumbnail_url: Optional[str] = Field(None, max_length=255)
+    vimeo_url: Optional[str] = None
+    vimeo_id: Optional[str] = None
+    category: Optional[str] = None
+    thumbnail_url: Optional[str] = None
     like_count: int = 0
     comment_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
+# ==== Token Schema ====
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+# ==== Like Schemas ====
 
 class LikeBase(BaseModel):
     user_id: uuid.UUID
@@ -120,15 +117,17 @@ class LikeResponse(LikeBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+# ==== Comment Schemas ====
+
 class CommentBase(BaseModel):
-    text: str = Field(..., min_length=1, max_length=500)
+    text: str
 
 class CommentCreate(BaseModel):
     video_id: uuid.UUID
-    text: str = Field(..., min_length=1, max_length=500)
+    text: str
 
 class CommentUpdate(BaseModel):
-    text: str = Field(..., min_length=1, max_length=500)
+    text: str
 
 class CommentResponse(BaseModel):
     id: uuid.UUID
@@ -141,6 +140,8 @@ class CommentResponse(BaseModel):
     video: Optional[VideoResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+# ==== News Schemas ====
 
 class NewsBase(BaseModel):
     title: str
@@ -168,6 +169,8 @@ class NewsListResponse(BaseModel):
     total: int
     page: int
     size: int
+
+# ==== Dashboard Analytics ====
 
 class UserGrowthData(BaseModel):
     month: str
