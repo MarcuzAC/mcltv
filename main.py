@@ -64,15 +64,15 @@ async def news_debug():
         }
     }
 
-# Include all routers with explicit prefixes
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
-app.include_router(users_router, prefix="/users", tags=["users"])
-app.include_router(videos_router, prefix="/videos", tags=["videos"])
-app.include_router(categories_router, prefix="/categories", tags=["categories"])
-app.include_router(likes_router, prefix="/likes", tags=["likes"])
-app.include_router(comments_router, prefix="/comments", tags=["comments"])
-app.include_router(news_router, prefix="/news", tags=["news"])
-app.include_router(subscription_router, prefix="/subscription", tags=["subscription"])
+# Include all routers WITHOUT prefixes
+app.include_router(auth_router, tags=["auth"])
+app.include_router(users_router, tags=["users"])
+app.include_router(videos_router, tags=["videos"])
+app.include_router(categories_router, tags=["categories"])
+app.include_router(likes_router, tags=["likes"])
+app.include_router(comments_router, tags=["comments"])
+app.include_router(news_router, tags=["news"])
+app.include_router(subscription_router, tags=["subscription"])
 
 # Root redirect
 @app.get("/")
