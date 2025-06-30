@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import joinedload
 
 from database import get_db
-from auth import get_current_user, get_current_subscribed_user
+from auth import get_current_user
 import models
 import schemas
 import crud
@@ -23,7 +23,7 @@ from vimeo_client import upload_to_vimeo, client
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
-# Create a new video with thumbnail (no admin restriction)
+# Create a new video with thumbnail
 @router.post("/", response_model=schemas.VideoResponse)
 async def create_video(
     title: str = Form(...),
@@ -31,7 +31,7 @@ async def create_video(
     file: UploadFile = File(...),
     thumbnail: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user)  # just authenticated user
+    current_user: schemas.UserResponse = Depends(get_current_user)
 ):
     temp_path = None
     thumbnail_path = None
@@ -136,11 +136,11 @@ async def create_video(
             except Exception as e:
                 print(f"Failed to delete thumbnail temp file: {str(e)}")
 
-# Get comprehensive dashboard stats (no admin restriction)
+# Get comprehensive dashboard stats
 @router.get("/dashboard/stats")
 async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user)  # no admin check
+    current_user: schemas.UserResponse = Depends(get_current_user)
 ):
     try:
         # Get basic counts
@@ -151,30 +151,24 @@ async def get_dashboard_stats(
         
         # Get user growth data (last 6 months)
         six_months_ago = datetime.datetime.utcnow() - datetime.timedelta(days=180)
-        try:
-            user_growth = await db.execute(
-                select(
-                    func.date_trunc('month', User.created_at).label('month'),
-                    func.count(User.id).label('count')
-                )
-                .filter(User.created_at >= six_months_ago)
-                .group_by(func.date_trunc('month', User.created_at))
+        user_growth = await db.execute(
+            select(
+                func.date_trunc('month', User.created_at).label('month'),
+                func.count(User.id).label('count')
             )
-            user_growth_data = user_growth.all()
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to get user growth data: {str(e)}"
-            )
+            .filter(User.created_at >= six_months_ago)
+            .group_by(func.date_trunc('month', User.created_at))
+        )
+        user_growth_data = user_growth.all()
         
         # Get video categories distribution
         video_categories = await db.execute(
             select(
                 Category.name,
                 func.count(Video.id).label('count')
-            )
-            .join(Video, Category.id == Video.category_id, isouter=True)
-            .group_by(Category.name))
+            ).join(Video, Category.id == Video.category_id, isouter=True)
+            .group_by(Category.name)
+        )
         video_categories_data = video_categories.all()
         
         # Get recent videos (last 5)
@@ -190,7 +184,6 @@ async def get_dashboard_stats(
             "total_videos": total_videos or 0,
             "total_categories": total_categories or 0,
             "total_news": total_news or 0,
-            "total_revenue": 0,  # Placeholder - implement your revenue logic
             "user_growth": {
                 "months": [month.strftime("%b %Y") for month, count in user_growth_data],
                 "counts": [count for month, count in user_growth_data]
@@ -221,8 +214,7 @@ async def get_dashboard_stats(
 @router.get("/recent", response_model=List[schemas.VideoResponse])
 async def get_recent_videos(
     limit: int = Query(5, description="Number of recent videos to fetch"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user)
+    db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
         select(Video)
@@ -245,14 +237,14 @@ async def get_recent_videos(
         for video in videos
     ]
 
-# Update a video (no admin restriction)
+# Update a video
 @router.put("/{video_id}", response_model=schemas.VideoResponse)
 async def update_video(
     video_id: uuid.UUID,
     video_update: schemas.VideoUpdate,
     thumbnail: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user)  # no admin check
+    current_user: schemas.UserResponse = Depends(get_current_user)
 ):
     result = await db.execute(
         select(Video).options(joinedload(Video.category)).filter(Video.id == video_id)
@@ -316,12 +308,12 @@ async def update_video(
         thumbnail_url=video.thumbnail_url
     )
 
-# Delete a video (no admin restriction)
+# Delete a video
 @router.delete("/{video_id}")
 async def delete_video(
     video_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user)  # no admin check
+    current_user: schemas.UserResponse = Depends(get_current_user)
 ):
     try:
         # First get the video to check existence and get Vimeo ID
@@ -352,7 +344,7 @@ async def delete_video(
             except Exception as e:
                 print(f"Failed to delete thumbnail file: {str(e)}")
 
-        # Delete video from database (this will cascade to likes and comments)
+        # Delete video from database
         await db.delete(video)
         await db.commit()
         
@@ -373,8 +365,7 @@ async def search_videos(
     category_id: Optional[uuid.UUID] = Query(None, description="Optional category filter"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(100, ge=1, le=1000, description="Pagination limit"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user)
+    db: AsyncSession = Depends(get_db)
 ):
     try:
         stmt = (
@@ -416,8 +407,7 @@ async def read_videos(
     skip: int = 0,
     limit: int = 100,
     category_id: Optional[uuid.UUID] = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user)
+    db: AsyncSession = Depends(get_db)
 ):
     videos = await crud.get_all_videos(db, skip=skip, limit=limit, category_id=category_id)
     return videos
@@ -426,8 +416,7 @@ async def read_videos(
 @router.get("/{video_id}", response_model=schemas.VideoResponse)
 async def read_video(
     video_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user)
+    db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
         select(Video)
