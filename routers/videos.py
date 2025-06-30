@@ -109,14 +109,11 @@ async def create_video(
         return schemas.VideoResponse(
             id=db_video.id,
             title=db_video.title,
-            category_id=db_video.category_id,
             created_date=db_video.created_date,
             vimeo_url=db_video.vimeo_url,
             vimeo_id=db_video.vimeo_id,
             category=db_video.category.name if db_video.category else None,
-            thumbnail_url=db_video.thumbnail_url,
-            like_count=0,
-            comment_count=0
+            thumbnail_url=db_video.thumbnail_url
         )
 
     except HTTPException:
@@ -140,72 +137,72 @@ async def create_video(
                 print(f"Failed to delete thumbnail temp file: {str(e)}")
 
 # Get comprehensive dashboard stats
-@router.get("/dashboard/stats", response_model=schemas.DashboardStatsResponse)
+@router.get("/dashboard/stats")
 async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
     current_user: schemas.UserResponse = Depends(get_current_user)
 ):
     try:
-        async with db.begin():
-            # Get basic counts
-            total_users = await db.scalar(select(func.count(User.id))) or 0
-            total_videos = await db.scalar(select(func.count(Video.id))) or 0
-            total_categories = await db.scalar(select(func.count(Category.id))) or 0
-            total_news = await db.scalar(select(func.count(News.id))) or 0
-            
-            # Get user growth data (last 6 months)
-            six_months_ago = datetime.datetime.utcnow() - datetime.timedelta(days=180)
-            user_growth = await db.execute(
-                select(
-                    func.date_trunc('month', User.created_at).label('month'),
-                    func.count(User.id).label('count')
-                )
-                .filter(User.created_at >= six_months_ago)
-                .group_by(func.date_trunc('month', User.created_at))
+        # Get basic counts
+        total_users = await db.scalar(select(func.count(User.id)))
+        total_videos = await db.scalar(select(func.count(Video.id)))
+        total_categories = await db.scalar(select(func.count(Category.id)))
+        total_news = await db.scalar(select(func.count(News.id)))
+        
+        # Get user growth data (last 6 months)
+        six_months_ago = datetime.datetime.utcnow() - datetime.timedelta(days=180)
+        user_growth = await db.execute(
+            select(
+                func.date_trunc('month', User.created_at).label('month'),
+                func.count(User.id).label('count')
             )
-            user_growth_data = [
-                schemas.UserGrowthData(
-                    month=month.strftime("%b %Y"),
-                    count=count
-                )
-                for month, count in user_growth.all()
+            .filter(User.created_at >= six_months_ago)
+            .group_by(func.date_trunc('month', User.created_at))
+        )
+        user_growth_data = user_growth.all()
+        
+        # Get video categories distribution
+        video_categories = await db.execute(
+            select(
+                Category.name,
+                func.count(Video.id).label('count')
+            ).join(Video, Category.id == Video.category_id, isouter=True)
+            .group_by(Category.name)
+        )
+        video_categories_data = video_categories.all()
+        
+        # Get recent videos (last 5)
+        recent_videos = await db.execute(
+            select(Video)
+            .order_by(Video.created_date.desc())
+            .limit(5)
+        )
+        recent_videos_data = recent_videos.scalars().all()
+        
+        return {
+            "total_users": total_users or 0,
+            "total_videos": total_videos or 0,
+            "total_categories": total_categories or 0,
+            "total_news": total_news or 0,
+            "user_growth": {
+                "months": [month.strftime("%b %Y") for month, count in user_growth_data],
+                "counts": [count for month, count in user_growth_data]
+            },
+            "video_categories": {
+                "names": [name for name, count in video_categories_data],
+                "counts": [count for name, count in video_categories_data]
+            },
+            "recent_videos": [
+                {
+                    "id": video.id,
+                    "title": video.title,
+                    "created_date": video.created_date,
+                    "category": video.category.name if video.category else None,
+                    "thumbnail_url": video.thumbnail_url
+                }
+                for video in recent_videos_data
             ]
-            
-            # Get video categories distribution
-            video_categories = await db.execute(
-                select(
-                    Category.name,
-                    func.count(Video.id).label('count')
-                )
-                .join(Video, Category.id == Video.category_id, isouter=True)
-                .group_by(Category.name)
-            )
-            video_categories_data = [
-                schemas.CategoryDistribution(
-                    name=name,
-                    count=count
-                )
-                for name, count in video_categories.all()
-            ]
-            
-            # Placeholder for revenue trends
-            revenue_trends = [
-                schemas.RevenueTrend(
-                    quarter="Q1 2023",
-                    amount=0.0
-                )
-            ]
-            
-            return schemas.DashboardStatsResponse(
-                total_users=total_users,
-                total_videos=total_videos,
-                total_categories=total_categories,
-                total_news=total_news,
-                total_revenue=0.0,
-                user_growth=user_growth_data,
-                video_categories=video_categories_data,
-                revenue_trends=revenue_trends
-            )
+        }
 
     except Exception as e:
         raise HTTPException(
@@ -219,35 +216,26 @@ async def get_recent_videos(
     limit: int = Query(5, description="Number of recent videos to fetch"),
     db: AsyncSession = Depends(get_db)
 ):
-    try:
-        result = await db.execute(
-            select(Video)
-            .options(joinedload(Video.category))
-            .order_by(Video.created_date.desc())
-            .limit(limit)
+    result = await db.execute(
+        select(Video)
+        .options(joinedload(Video.category))
+        .order_by(Video.created_date.desc())
+        .limit(limit)
+    )
+    videos = result.scalars().all()
+    
+    return [
+        schemas.VideoResponse(
+            id=video.id,
+            title=video.title,
+            created_date=video.created_date,
+            vimeo_url=video.vimeo_url,
+            vimeo_id=video.vimeo_id,
+            category=video.category.name if video.category else None,
+            thumbnail_url=video.thumbnail_url
         )
-        videos = result.scalars().all()
-        
-        return [
-            schemas.VideoResponse(
-                id=video.id,
-                title=video.title,
-                category_id=video.category_id,
-                created_date=video.created_date,
-                vimeo_url=video.vimeo_url,
-                vimeo_id=video.vimeo_id,
-                category=video.category.name if video.category else None,
-                thumbnail_url=video.thumbnail_url,
-                like_count=len(video.likes) if hasattr(video, 'likes') else 0,
-                comment_count=len(video.comments) if hasattr(video, 'comments') else 0
-            )
-            for video in videos
-        ]
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch recent videos: {str(e)}"
-        )
+        for video in videos
+    ]
 
 # Update a video
 @router.put("/{video_id}", response_model=schemas.VideoResponse)
@@ -313,14 +301,11 @@ async def update_video(
     return schemas.VideoResponse(
         id=video.id,
         title=video.title,
-        category_id=video.category_id,
         created_date=video.created_date,
         vimeo_url=video.vimeo_url,
         vimeo_id=video.vimeo_id,
         category=video.category.name if video.category else None,
-        thumbnail_url=video.thumbnail_url,
-        like_count=len(video.likes) if hasattr(video, 'likes') else 0,
-        comment_count=len(video.comments) if hasattr(video, 'comments') else 0
+        thumbnail_url=video.thumbnail_url
     )
 
 # Delete a video
@@ -401,14 +386,11 @@ async def search_videos(
             schemas.VideoResponse(
                 id=video.id,
                 title=video.title,
-                category_id=video.category_id,
                 created_date=video.created_date,
                 vimeo_url=video.vimeo_url,
                 vimeo_id=video.vimeo_id,
                 category=video.category.name if video.category else None,
-                thumbnail_url=video.thumbnail_url,
-                like_count=len(video.likes) if hasattr(video, 'likes') else 0,
-                comment_count=len(video.comments) if hasattr(video, 'comments') else 0
+                thumbnail_url=video.thumbnail_url
             )
             for video in videos
         ]
@@ -449,14 +431,13 @@ async def read_video(
     return schemas.VideoResponse(
         id=video.id,
         title=video.title,
-        category_id=video.category_id,
         created_date=video.created_date,
         vimeo_url=video.vimeo_url,
         vimeo_id=video.vimeo_id,
         category=video.category.name if video.category else None,
         thumbnail_url=video.thumbnail_url,
-        like_count=len(video.likes),
-        comment_count=len(video.comments)
+        likes_count=len(video.likes),
+        comments_count=len(video.comments)
     )
 
 # Share video endpoint (public)

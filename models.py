@@ -20,19 +20,11 @@ class User(Base):
     reset_token = Column(String, nullable=True)
     avatar_url = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
-    is_subscribed = Column(Boolean, default=False)
-    subscription_expiry = Column(DateTime, nullable=True)  # Nullable to allow non-s
 
     # Relationships
     likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
     news = relationship("News", back_populates="author")
-
-    def is_subscription_active(self):
-        """Check if the user's subscription is active."""
-        if not self.is_subscribed or not self.subscription_expiry:
-            return False
-        return self.subscription_expiry > datetime.datetime.utcnow()
 
 class Category(Base):
     __tablename__ = "categories"
@@ -49,7 +41,7 @@ class Video(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String(100), nullable=False)
     thumbnail_url = Column(String)
-    created_date = Column(DateTime, server_default=func.now(), index=True)  # Changed to server_default
+    created_date = Column(DateTime, server_default=func.now(), index=True)
     category_id = Column(UUID(as_uuid=True), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
     vimeo_url = Column(String)
     vimeo_id = Column(String)
@@ -105,28 +97,3 @@ class Comment(Base):
     # Relationships
     user = relationship("User", back_populates="comments")
     video = relationship("Video", back_populates="comments")
-
-class Revenue(Base):
-    __tablename__ = "revenue"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    amount = Column(Float, nullable=False)  # Changed from db.Float to Float
-    date = Column(DateTime, server_default=func.now(), index=True)
-    source = Column(String(50))  # e.g., "subscription", "advertisement", "sponsorship"
-    description = Column(String(200))
-# Add this to your models.py
-class SubscriptionPlan(Base):
-    __tablename__ = "subscription_plans"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    price = Column(Float, nullable=False)
-    currency = Column(String(3), default="MWK")
-    duration_days = Column(Integer, nullable=False)  # Duration in days
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
-
-    # Relationship to track which users have this plan (optional)
-    # subscriptions = relationship("UserSubscription", back_populates="plan")

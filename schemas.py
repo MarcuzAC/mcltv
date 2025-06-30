@@ -29,8 +29,6 @@ class UserResponse(UserBase):
     avatar_url: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-    is_subscribed: Optional[bool] = False
-    subscription_expiry: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -180,16 +178,10 @@ class CategoryDistribution(BaseModel):
     name: str
     count: int
 
-class RevenueTrend(BaseModel):
-    quarter: str
-    amount: float
-
 class DashboardStatsResponse(BaseModel):
     total_users: int
     total_videos: int
     total_categories: int
     total_news: int
-    total_revenue: float
     user_growth: List[UserGrowthData]
     video_categories: List[CategoryDistribution]
-    revenue_trends: List[RevenueTrend]

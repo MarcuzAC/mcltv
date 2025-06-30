@@ -11,8 +11,7 @@ from routers import (
     categories,
     likes,
     comments,
-    news,
-    subscription
+    news
 )
 
 app = FastAPI(
@@ -72,7 +71,6 @@ app.include_router(categories.router)
 app.include_router(likes.router)
 app.include_router(comments.router)
 app.include_router(news.router)
-app.include_router(subscription.router)
 
 # Root redirect
 @app.get("/")
