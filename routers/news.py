@@ -30,7 +30,7 @@ async def get_news_by_id(news_id: UUID, db: AsyncSession) -> News:
 
 
 # ─────────────────────────────
-# Create News - No subscription required (authors/admins only)
+# Create News
 # ─────────────────────────────
 @router.post("/", response_model=NewsResponse)
 async def create_news(
@@ -65,7 +65,7 @@ async def create_news(
 
 
 # ─────────────────────────────
-# Get Paginated News List - Requires subscription
+# Get Paginated News List
 # ─────────────────────────────
 @router.get("/", response_model=NewsListResponse)
 async def get_news_list(
@@ -73,9 +73,8 @@ async def get_news_list(
     size: int = Query(10, gt=0, le=100),
     published_only: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    """Get paginated list of news items (subscribers only)."""
+    """Get paginated list of news items."""
     query = select(News)
     if published_only:
         query = query.where(News.is_published == True)
@@ -90,20 +89,19 @@ async def get_news_list(
 
 
 # ─────────────────────────────
-# Get Single News by ID - Requires subscription
+# Get Single News by ID
 # ─────────────────────────────
 @router.get("/{news_id}", response_model=NewsResponse)
 async def get_news(
     news_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    """Get a single news item by ID (subscribers only)."""
+    """Get a single news item by ID."""
     return await get_news_by_id(news_id, db)
 
 
 # ─────────────────────────────
-# Update News - No subscription required (authors/admins only)
+# Update News
 # ─────────────────────────────
 @router.put("/{news_id}", response_model=NewsResponse)
 async def update_news(
@@ -140,7 +138,7 @@ async def update_news(
 
 
 # ─────────────────────────────
-# Delete News - No subscription required (authors/admins only)
+# Delete News
 # ─────────────────────────────
 @router.delete("/{news_id}", status_code=204)
 async def delete_news(
@@ -160,15 +158,14 @@ async def delete_news(
 
 
 # ─────────────────────────────
-# Get Latest News - Requires subscription
+# Get Latest News
 # ─────────────────────────────
 @router.get("/latest/", response_model=List[NewsResponse])
 async def get_latest_news(
     limit: int = Query(5, gt=0, le=20),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    """Get latest news articles (subscribers only)."""
+    """Get latest news articles."""
     result = await db.execute(
         select(News)
         .where(News.is_published == True)
@@ -179,7 +176,7 @@ async def get_latest_news(
 
 
 # ─────────────────────────────
-# Upload News Image - No subscription required (authors/admins only)
+# Upload News Image
 # ─────────────────────────────
 @router.post("/upload-image/")
 async def upload_news_image_endpoint(
@@ -194,7 +191,7 @@ async def upload_news_image_endpoint(
 
 
 # ─────────────────────────────
-# Search News - Requires subscription
+# Search News
 # ─────────────────────────────
 @router.get("/search/", response_model=NewsListResponse)
 async def search_news(
@@ -203,9 +200,8 @@ async def search_news(
     size: int = Query(10, gt=0, le=100),
     published_only: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    """Search news articles by title or content (subscribers only)."""
+    """Search news articles by title or content."""
     q = select(News)
     if published_only:
         q = q.where(News.is_published == True)
