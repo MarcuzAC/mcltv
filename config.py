@@ -17,7 +17,7 @@ class Settings:
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_PUBLIC_KEY = os.getenv("SUPABASE_PUBLIC_KEY")
     SUPABASE_PRIVATE_KEY = os.getenv("SUPABASE_PRIVATE_KEY")
-    SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "news-images")
+    SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "news-images")
 
     PAYCHANGU_SECRET_KEY = os.getenv("PAYCHANGU_SECRET_KEY")
 
