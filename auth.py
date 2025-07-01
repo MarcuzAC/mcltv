@@ -15,7 +15,7 @@ from schemas import Token, UserCreate, UserResponse
 from security import get_password_hash, verify_password
 
 # Load configuration from environment variables
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 120))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
@@ -79,21 +79,6 @@ async def get_current_user(
     return user
 
 
-async def get_current_subscribed_user(
-    current_user: User = Depends(get_current_user)
-) -> User:
-    """Dependency to verify user has an active subscription."""
-    if not current_user.is_subscribed or (
-        current_user.subscription_expiry and 
-        current_user.subscription_expiry < datetime.utcnow()
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Subscription required to access this content",
-        )
-    return current_user
-
-
 @router.post("/register", response_model=Token)
 async def register(
     user: UserCreate, 
@@ -125,9 +110,7 @@ async def register(
         first_name=user.first_name,
         last_name=user.last_name,
         phone_number=user.phone_number,
-        is_admin=False,
-        is_subscribed=False,
-        subscription_expiry=None
+        is_admin=False
     )
 
     db.add(new_user)
@@ -140,8 +123,7 @@ async def register(
             "sub": new_user.username,
             "user_id": str(new_user.id),
             "email": new_user.email,
-            "phone": new_user.phone_number,
-            "is_subscribed": new_user.is_subscribed
+            "phone": new_user.phone_number
         },
         expires_delta=access_token_expires
     )
@@ -179,8 +161,7 @@ async def login(
             "sub": user.username,
             "user_id": str(user.id),
             "email": user.email,
-            "phone": user.phone_number,
-            "is_subscribed": user.is_subscribed
+            "phone": user.phone_number
         },
         expires_delta=access_token_expires
     )
@@ -247,7 +228,5 @@ async def verify_token(current_user: User = Depends(get_current_user)):
         "message": "Token is valid",
         "username": current_user.username,
         "user_id": current_user.id,
-        "is_admin": current_user.is_admin,
-        "is_subscribed": current_user.is_subscribed,
-        "subscription_expiry": current_user.subscription_expiry
+        "is_admin": current_user.is_admin
     }

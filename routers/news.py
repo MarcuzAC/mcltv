@@ -13,7 +13,7 @@ from config import settings
 from database import get_db
 from models import News, User
 from schemas import NewsCreate, NewsUpdate, NewsResponse, NewsListResponse
-from auth import get_current_user, get_current_subscribed_user
+from auth import get_current_user
 from utils import upload_news_image
 
 router = APIRouter(prefix="/news", tags=["news"])
@@ -73,7 +73,7 @@ async def get_news_list(
     size: int = Query(10, gt=0, le=100),
     published_only: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Get paginated list of news items (subscribers only)."""
     query = select(News)
@@ -96,7 +96,7 @@ async def get_news_list(
 async def get_news(
     news_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Get a single news item by ID (subscribers only)."""
     return await get_news_by_id(news_id, db)
@@ -166,7 +166,7 @@ async def delete_news(
 async def get_latest_news(
     limit: int = Query(5, gt=0, le=20),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Get latest news articles (subscribers only)."""
     result = await db.execute(
@@ -203,7 +203,7 @@ async def search_news(
     size: int = Query(10, gt=0, le=100),
     published_only: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_subscribed_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Search news articles by title or content (subscribers only)."""
     q = select(News)
