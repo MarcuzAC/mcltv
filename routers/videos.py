@@ -2,7 +2,9 @@ import uuid
 import datetime
 import os
 import tempfile
+import asyncio
 from typing import List, Optional
+from sqlalchemy import text
 
 from fastapi import (
     APIRouter, Depends, HTTPException, Query, Request, Response, 
@@ -10,8 +12,9 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
+import sqlalchemy.exc
 
 from database import get_db
 from auth import get_current_user
@@ -136,106 +139,25 @@ async def create_video(
             except Exception as e:
                 print(f"Failed to delete thumbnail temp file: {str(e)}")
 
-# Get comprehensive dashboard stats
 @router.get("/dashboard/stats")
-async def get_dashboard_stats(
-    db: AsyncSession = Depends(get_db),
-    current_user: schemas.UserResponse = Depends(get_current_user)
-):
-    try:
-        # Get basic counts
-        total_users = await db.scalar(select(func.count(User.id)))
-        total_videos = await db.scalar(select(func.count(Video.id)))
-        total_categories = await db.scalar(select(func.count(Category.id)))
-        total_news = await db.scalar(select(func.count(News.id)))
-        
-        # Get user growth data (last 6 months)
-        six_months_ago = datetime.datetime.utcnow() - datetime.timedelta(days=180)
-        user_growth = await db.execute(
-            select(
-                func.date_trunc('month', User.created_at).label('month'),
-                func.count(User.id).label('count')
-            )
-            .filter(User.created_at >= six_months_ago)
-            .group_by(func.date_trunc('month', User.created_at))
-        )
-        user_growth_data = user_growth.all()
-        
-        # Get video categories distribution
-        video_categories = await db.execute(
-            select(
-                Category.name,
-                func.count(Video.id).label('count')
-            ).join(Video, Category.id == Video.category_id, isouter=True)
-            .group_by(Category.name)
-        )
-        video_categories_data = video_categories.all()
-        
-        # Get recent videos (last 5)
-        recent_videos = await db.execute(
-            select(Video)
-            .order_by(Video.created_date.desc())
-            .limit(5)
-        )
-        recent_videos_data = recent_videos.scalars().all()
-        
-        return {
-            "total_users": total_users or 0,
-            "total_videos": total_videos or 0,
-            "total_categories": total_categories or 0,
-            "total_news": total_news or 0,
-            "user_growth": {
-                "months": [month.strftime("%b %Y") for month, count in user_growth_data],
-                "counts": [count for month, count in user_growth_data]
-            },
-            "video_categories": {
-                "names": [name for name, count in video_categories_data],
-                "counts": [count for name, count in video_categories_data]
-            },
-            "recent_videos": [
-                {
-                    "id": video.id,
-                    "title": video.title,
-                    "created_date": video.created_date,
-                    "category": video.category.name if video.category else None,
-                    "thumbnail_url": video.thumbnail_url
-                }
-                for video in recent_videos_data
-            ]
-        }
+async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
+    """Retrieve total users, videos, and categories. Revenue is set to 0 by default."""
+    total_users = await db.scalar(func.count(User.id))
+    total_videos = await db.scalar(func.count(Video.id))
+    total_categories = await db.scalar(func.count(Category.id))
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to load dashboard stats: {str(e)}"
-        )
+    return {
+        "total_users": total_users or 0,
+        "total_videos": total_videos or 0,
+        "total_categories": total_categories or 0,
+        "revenue": 0  # Default to 0
+    }
 
-# Get recent videos
 @router.get("/recent", response_model=List[schemas.VideoResponse])
-async def get_recent_videos(
-    limit: int = Query(5, description="Number of recent videos to fetch"),
-    db: AsyncSession = Depends(get_db)
-):
-    result = await db.execute(
-        select(Video)
-        .options(joinedload(Video.category))
-        .order_by(Video.created_date.desc())
-        .limit(limit)
-    )
-    videos = result.scalars().all()
-    
-    return [
-        schemas.VideoResponse(
-            id=video.id,
-            title=video.title,
-            created_date=video.created_date,
-            vimeo_url=video.vimeo_url,
-            vimeo_id=video.vimeo_id,
-            category=video.category.name if video.category else None,
-            thumbnail_url=video.thumbnail_url
-        )
-        for video in videos
-    ]
+async def get_recent_videos(db: AsyncSession = Depends(get_db)):
+    """Retrieve the most recent uploaded videos."""
+    videos = await crud.get_recent_videos(db)
+    return videos
 
 # Update a video
 @router.put("/{video_id}", response_model=schemas.VideoResponse)
