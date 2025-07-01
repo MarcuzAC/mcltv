@@ -15,7 +15,7 @@ from schemas import Token, UserCreate, UserResponse
 from security import get_password_hash, verify_password
 
 # Load configuration from environment variables
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY="ivneWx0gdaNz9IEjeIAnhrUwFYLVYDHKQlrOoUYpi4GLxT_5YzF_KJ9d6s6XagXoMzxvMgJOZr765zoSPtglZw"
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 120))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
