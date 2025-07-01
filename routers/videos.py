@@ -112,11 +112,14 @@ async def create_video(
         return schemas.VideoResponse(
             id=db_video.id,
             title=db_video.title,
+            category_id=db_video.category_id,
             created_date=db_video.created_date,
             vimeo_url=db_video.vimeo_url,
             vimeo_id=db_video.vimeo_id,
             category=db_video.category.name if db_video.category else None,
-            thumbnail_url=db_video.thumbnail_url
+            thumbnail_url=db_video.thumbnail_url,
+            likes_count=0,
+            comments_count=0
         )
 
     except HTTPException:
@@ -200,9 +203,14 @@ async def get_dashboard_stats(
             {
                 "id": video.id,
                 "title": video.title,
+                "category_id": video.category_id,
                 "created_date": video.created_date,
+                "vimeo_url": video.vimeo_url,
+                "vimeo_id": video.vimeo_id,
                 "category": video.category.name if video.category else None,
-                "thumbnail_url": video.thumbnail_url
+                "thumbnail_url": video.thumbnail_url,
+                "likes_count": len(video.likes),
+                "comments_count": len(video.comments)
             }
             for video in recent_videos.scalars().unique().all()
         ]
@@ -251,11 +259,14 @@ async def get_recent_videos(
         schemas.VideoResponse(
             id=video.id,
             title=video.title,
+            category_id=video.category_id,
             created_date=video.created_date,
             vimeo_url=video.vimeo_url,
             vimeo_id=video.vimeo_id,
             category=video.category.name if video.category else None,
-            thumbnail_url=video.thumbnail_url
+            thumbnail_url=video.thumbnail_url,
+            likes_count=len(video.likes),
+            comments_count=len(video.comments)
         )
         for video in videos
     ]
@@ -324,11 +335,14 @@ async def update_video(
     return schemas.VideoResponse(
         id=video.id,
         title=video.title,
+        category_id=video.category_id,
         created_date=video.created_date,
         vimeo_url=video.vimeo_url,
         vimeo_id=video.vimeo_id,
         category=video.category.name if video.category else None,
-        thumbnail_url=video.thumbnail_url
+        thumbnail_url=video.thumbnail_url,
+        likes_count=len(video.likes),
+        comments_count=len(video.comments)
     )
 
 # Delete a video
@@ -409,11 +423,14 @@ async def search_videos(
             schemas.VideoResponse(
                 id=video.id,
                 title=video.title,
+                category_id=video.category_id,
                 created_date=video.created_date,
                 vimeo_url=video.vimeo_url,
                 vimeo_id=video.vimeo_id,
                 category=video.category.name if video.category else None,
-                thumbnail_url=video.thumbnail_url
+                thumbnail_url=video.thumbnail_url,
+                likes_count=len(video.likes),
+                comments_count=len(video.comments)
             )
             for video in videos
         ]
@@ -454,6 +471,7 @@ async def read_video(
     return schemas.VideoResponse(
         id=video.id,
         title=video.title,
+        category_id=video.category_id,
         created_date=video.created_date,
         vimeo_url=video.vimeo_url,
         vimeo_id=video.vimeo_id,
