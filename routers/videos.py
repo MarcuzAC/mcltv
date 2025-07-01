@@ -5,7 +5,6 @@ import tempfile
 import asyncio
 from typing import List, Optional
 from sqlalchemy import text
-
 from fastapi import (
     APIRouter, Depends, HTTPException, Query, Request, Response, 
     UploadFile, File, Form, status
@@ -13,7 +12,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import selectinload  # Changed from joinedload to selectinload
 import sqlalchemy.exc
 
 from database import get_db
@@ -191,10 +190,14 @@ async def get_dashboard_stats(
             for name, count in video_categories.all()
         ]
 
-        # Get recent videos with category eager loading
+        # Get recent videos with category, likes, and comments eager loading
         recent_videos = await db.execute(
             select(Video)
-            .options(joinedload(Video.category))
+            .options(
+                selectinload(Video.category),  # Eager load category
+                selectinload(Video.likes),     # Eager load likes
+                selectinload(Video.comments)   # Eager load comments
+            )
             .order_by(Video.created_date.desc())
             .limit(5)
             .execution_options(timeout=5)
@@ -209,8 +212,8 @@ async def get_dashboard_stats(
                 "vimeo_id": video.vimeo_id,
                 "category": video.category.name if video.category else None,
                 "thumbnail_url": video.thumbnail_url,
-                "likes_count": len(video.likes),
-                "comments_count": len(video.comments)
+                "likes_count": len(video.likes),    # Safe due to eager loading
+                "comments_count": len(video.comments)  # Safe due to eager loading
             }
             for video in recent_videos.scalars().unique().all()
         ]
@@ -249,7 +252,11 @@ async def get_recent_videos(
 ):
     result = await db.execute(
         select(Video)
-        .options(joinedload(Video.category))
+        .options(
+            selectinload(Video.category),  # Eager load category
+            selectinload(Video.likes),     # Eager load likes
+            selectinload(Video.comments)   # Eager load comments
+        )
         .order_by(Video.created_date.desc())
         .limit(limit)
     )
@@ -265,8 +272,8 @@ async def get_recent_videos(
             vimeo_id=video.vimeo_id,
             category=video.category.name if video.category else None,
             thumbnail_url=video.thumbnail_url,
-            likes_count=len(video.likes),
-            comments_count=len(video.comments)
+            likes_count=len(video.likes),    # Safe due to eager loading
+            comments_count=len(video.comments)  # Safe due to eager loading
         )
         for video in videos
     ]
@@ -281,7 +288,13 @@ async def update_video(
     current_user: schemas.UserResponse = Depends(get_current_user)
 ):
     result = await db.execute(
-        select(Video).options(joinedload(Video.category)).filter(Video.id == video_id)
+        select(Video)
+        .options(
+            selectinload(Video.category),  # Eager load category
+            selectinload(Video.likes),     # Eager load likes
+            selectinload(Video.comments)   # Eager load comments
+        )
+        .filter(Video.id == video_id)
     )
     video = result.scalars().first()
 
@@ -341,8 +354,8 @@ async def update_video(
         vimeo_id=video.vimeo_id,
         category=video.category.name if video.category else None,
         thumbnail_url=video.thumbnail_url,
-        likes_count=len(video.likes),
-        comments_count=len(video.comments)
+        likes_count=len(video.likes),    # Safe due to eager loading
+        comments_count=len(video.comments)  # Safe due to eager loading
     )
 
 # Delete a video
@@ -407,7 +420,11 @@ async def search_videos(
     try:
         stmt = (
             select(Video)
-            .options(joinedload(Video.category))
+            .options(
+                selectinload(Video.category),  # Eager load category
+                selectinload(Video.likes),     # Eager load likes
+                selectinload(Video.comments)   # Eager load comments
+            )
             .filter(Video.title.ilike(f"%{query}%"))
         )
 
@@ -429,8 +446,8 @@ async def search_videos(
                 vimeo_id=video.vimeo_id,
                 category=video.category.name if video.category else None,
                 thumbnail_url=video.thumbnail_url,
-                likes_count=len(video.likes),
-                comments_count=len(video.comments)
+                likes_count=len(video.likes),    # Safe due to eager loading
+                comments_count=len(video.comments)  # Safe due to eager loading
             )
             for video in videos
         ]
@@ -449,8 +466,35 @@ async def read_videos(
     category_id: Optional[uuid.UUID] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    videos = await crud.get_all_videos(db, skip=skip, limit=limit, category_id=category_id)
-    return videos
+    # Assuming crud.get_all_videos can be modified to include eager loading
+    # If not, here's a direct implementation
+    stmt = select(Video).options(
+        selectinload(Video.category),  # Eager load category
+        selectinload(Video.likes),     # Eager load likes
+        selectinload(Video.comments)   # Eager load comments
+    )
+    if category_id:
+        stmt = stmt.filter(Video.category_id == category_id)
+    stmt = stmt.offset(skip).limit(limit)
+    
+    result = await db.execute(stmt)
+    videos = result.scalars().all()
+    
+    return [
+        schemas.VideoResponse(
+            id=video.id,
+            title=video.title,
+            category_id=video.category_id,
+            created_date=video.created_date,
+            vimeo_url=video.vimeo_url,
+            vimeo_id=video.vimeo_id,
+            category=video.category.name if video.category else None,
+            thumbnail_url=video.thumbnail_url,
+            likes_count=len(video.likes),    # Safe due to eager loading
+            comments_count=len(video.comments)  # Safe due to eager loading
+        )
+        for video in videos
+    ]
 
 # Get video by ID
 @router.get("/{video_id}", response_model=schemas.VideoResponse)
@@ -460,7 +504,11 @@ async def read_video(
 ):
     result = await db.execute(
         select(Video)
-        .options(joinedload(Video.category), joinedload(Video.likes), joinedload(Video.comments))
+        .options(
+            selectinload(Video.category),  # Eager load category
+            selectinload(Video.likes),     # Eager load likes
+            selectinload(Video.comments)   # Eager load comments
+        )
         .filter(Video.id == video_id)
     )
     video = result.scalars().first()
@@ -477,8 +525,8 @@ async def read_video(
         vimeo_id=video.vimeo_id,
         category=video.category.name if video.category else None,
         thumbnail_url=video.thumbnail_url,
-        likes_count=len(video.likes),
-        comments_count=len(video.comments)
+        likes_count=len(video.likes),    # Safe due to eager loading
+        comments_count=len(video.comments)  # Safe due to eager loading
     )
 
 # Share video endpoint (public)
