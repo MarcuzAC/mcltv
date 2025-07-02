@@ -11,12 +11,23 @@ from crud import get_videos_per_category
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
-@router.post("/", response_model=CategoryOut)
+@router.post("/", response_model=CategoryOut, status_code=201)
 async def create_category(
     category: CategoryCreate,
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new category"""
+    # Check if category with this name already exists
+    existing = await db.execute(
+        select(Category)
+        .where(func.lower(Category.name) == func.lower(category.name))
+    )
+    if existing.scalars().first():
+        raise HTTPException(
+            status_code=400,
+            detail="Category with this name already exists"
+        )
+    
     db_category = Category(**category.dict())
     db.add(db_category)
     await db.commit()
@@ -32,6 +43,7 @@ async def get_categories(
     """Get all categories with pagination"""
     result = await db.execute(
         select(Category)
+        .order_by(Category.name)
         .offset(skip)
         .limit(limit)
     )
@@ -43,11 +55,7 @@ async def get_category(
     db: AsyncSession = Depends(get_db)
 ):
     """Get a single category by ID"""
-    result = await db.execute(
-        select(Category)
-        .where(Category.id == category_id)
-    )
-    category = result.scalars().first()
+    category = await db.get(Category, category_id)
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     return category
@@ -57,7 +65,7 @@ async def get_category_by_name(
     name: str,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get a category by name"""
+    """Get a category by name (case-insensitive)"""
     result = await db.execute(
         select(Category)
         .where(func.lower(Category.name) == func.lower(name))
@@ -74,13 +82,23 @@ async def update_category(
     db: AsyncSession = Depends(get_db)
 ):
     """Update a category"""
-    result = await db.execute(
-        select(Category)
-        .where(Category.id == category_id)
-    )
-    db_category = result.scalars().first()
+    db_category = await db.get(Category, category_id)
     if not db_category:
         raise HTTPException(status_code=404, detail="Category not found")
+
+    # Check if another category already has this name
+    existing = await db.execute(
+        select(Category)
+        .where(
+            func.lower(Category.name) == func.lower(category.name),
+            Category.id != category_id
+        )
+    )
+    if existing.scalars().first():
+        raise HTTPException(
+            status_code=400,
+            detail="Another category with this name already exists"
+        )
 
     db_category.name = category.name
     await db.commit()
@@ -93,13 +111,20 @@ async def delete_category(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete a category"""
-    result = await db.execute(
-        select(Category)
-        .where(Category.id == category_id)
-    )
-    category = result.scalars().first()
+    category = await db.get(Category, category_id)
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
+
+    # Check if category has associated videos
+    has_videos = await db.scalar(
+        select(func.count(Video.id))
+        .where(Video.category_id == category_id)
+    )
+    if has_videos:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete category with associated videos"
+        )
 
     await db.delete(category)
     await db.commit()
@@ -124,16 +149,10 @@ async def get_single_category_video_count(
     Get video count for a specific category.
     Returns dictionary with category details and video count.
     """
-    # First verify category exists
-    category_result = await db.execute(
-        select(Category)
-        .where(Category.id == category_id)
-    )
-    category = category_result.scalars().first()
+    category = await db.get(Category, category_id)
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    # Get video count
     video_count = await db.scalar(
         select(func.count(Video.id))
         .where(Video.category_id == category_id)
