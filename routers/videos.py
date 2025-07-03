@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form, status, Response
+from winreg import QueryReflectionKey
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile,File, Form, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select, delete
-from typing import List, Optional
+from sqlalchemy import func
+from typing import List
 from database import get_db
 from auth import get_current_user
 import schemas
@@ -10,10 +11,12 @@ import crud
 import uuid
 import tempfile
 import os
-import datetime
-from vimeo_client import upload_to_vimeo, client
-from models import User, Video, Category, Like, Comment
+from sqlalchemy.future import select
+from vimeo_client import upload_to_vimeo
+from models import User, Video, Category
 from sqlalchemy.orm import joinedload
+from typing import Optional
+from vimeo_client import client
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
@@ -22,21 +25,11 @@ async def create_video(
     title: str = Form(...),
     category_id: uuid.UUID = Form(...),
     file: UploadFile = File(...),
-    thumbnail: Optional[UploadFile] = File(None),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Create a new video with optional thumbnail"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can upload videos"
-        )
-
     temp_path = None
-    thumbnail_path = None
     try:
-        # Validate video file type
+        # Validate file type
         if file.content_type not in ["video/mp4", "video/quicktime", "video/x-msvideo"]:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -48,23 +41,6 @@ async def create_video(
             content = await file.read()
             temp_file.write(content)
             temp_path = temp_file.name
-
-        # Handle thumbnail if provided
-        thumbnail_url = None
-        if thumbnail:
-            if thumbnail.content_type not in ["image/jpeg", "image/png"]:
-                raise HTTPException(
-                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                    detail="Unsupported thumbnail type. Only JPEG and PNG are allowed."
-                )
-            
-            # Save thumbnail to persistent storage
-            thumbnail_filename = f"{uuid.uuid4()}{os.path.splitext(thumbnail.filename)[1]}"
-            thumbnail_dir = "thumbnails"
-            os.makedirs(thumbnail_dir, exist_ok=True)
-            thumbnail_url = f"/{thumbnail_dir}/{thumbnail_filename}"
-            with open(os.path.join(thumbnail_dir, thumbnail_filename), "wb") as buffer:
-                buffer.write(await thumbnail.read())
 
         # Upload to Vimeo
         try:
@@ -87,8 +63,7 @@ async def create_video(
                 db=db,
                 video=video_data,
                 vimeo_url=vimeo_data['vimeo_url'],
-                vimeo_id=vimeo_data['vimeo_id'],
-                thumbnail_url=thumbnail_url
+                vimeo_id=vimeo_data['vimeo_id']
             )
         except Exception as e:
             raise HTTPException(
@@ -96,115 +71,56 @@ async def create_video(
                 detail=f"Failed to save video to database: {str(e)}"
             )
 
+        # ✅ Convert to Pydantic Schema before returning
         return schemas.VideoResponse(
             id=db_video.id,
             title=db_video.title,
             created_date=db_video.created_date,
             vimeo_url=db_video.vimeo_url,
             vimeo_id=db_video.vimeo_id,
-            category=db_video.category.name if db_video.category else None,
-            thumbnail_url=db_video.thumbnail_url
+            category=db_video.category.name if db_video.category else None  # ✅ Safe access
         )
 
     except HTTPException:
         raise
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {str(e)}"
         )
+
     finally:
-        # Cleanup temp files
+        # Cleanup temp file
         if temp_path and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
             except Exception as e:
                 print(f"Failed to delete temp file: {str(e)}")
 
+
 @router.get("/dashboard/stats")
-async def get_dashboard_stats(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Retrieve comprehensive dashboard statistics (admin only)"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can view dashboard stats"
-        )
+async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
+    """Retrieve total users, videos, and categories. Revenue is set to 0 by default."""
+    total_users = await db.scalar(func.count(User.id))
+    total_videos = await db.scalar(func.count(Video.id))
+    total_categories = await db.scalar(func.count(Category.id))
 
-    try:
-        # Get basic counts
-        total_users = await db.scalar(select(func.count(User.id)))
-        total_videos = await db.scalar(select(func.count(Video.id)))
-        total_categories = await db.scalar(select(func.count(Category.id)))
-        
-        # Get user growth data (last 6 months)
-        six_months_ago = datetime.datetime.utcnow() - datetime.timedelta(days=180)
-        user_growth = await db.execute(
-            select(
-                func.date_trunc('month', User.created_at).label('month'),
-                func.count(User.id).label('count')
-            )
-            .filter(User.created_at >= six_months_ago)
-            .group_by(func.date_trunc('month', User.created_at))
-        )
-        user_growth_data = user_growth.all()
-        
-        # Get video categories distribution
-        video_categories = await db.execute(
-            select(
-                Category.name,
-                func.count(Video.id).label('count')
-            )
-            .join(Video, Category.id == Video.category_id, isouter=True)
-            .group_by(Category.name))
-        video_categories_data = video_categories.all()
-        
-        # Get recent videos (last 5)
-        recent_videos = await db.execute(
-            select(Video)
-            .order_by(Video.created_date.desc())
-            .limit(5))
-        recent_videos_data = recent_videos.scalars().all()
-        
-        return {
-            "total_users": total_users or 0,
-            "total_videos": total_videos or 0,
-            "total_categories": total_categories or 0,
-            "revenue": 0,  # Placeholder
-            "user_growth": {
-                "months": [month.strftime("%b %Y") for month, count in user_growth_data],
-                "counts": [count for month, count in user_growth_data]
-            },
-            "video_categories": {
-                "names": [name for name, count in video_categories_data],
-                "counts": [count for name, count in video_categories_data]
-            },
-            "recent_videos": [
-                {
-                    "id": video.id,
-                    "title": video.title,
-                    "created_date": video.created_date,
-                    "category": video.category.name if video.category else None,
-                    "thumbnail_url": video.thumbnail_url
-                }
-                for video in recent_videos_data
-            ]
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to load dashboard stats: {str(e)}"
-        )
+    return {
+        "total_users": total_users or 0,
+        "total_videos": total_videos or 0,
+        "total_categories": total_categories or 0,
+        "revenue": 0  # Default to 0
+    }
 
+# Get recent videos
 @router.get("/recent", response_model=List[schemas.VideoResponse])
 async def get_recent_videos(
-    limit: int = Query(5, description="Number of recent videos to fetch"),
+    limit: int = QueryReflectionKey(5, description="Number of recent videos to fetch"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get most recently added videos"""
+    """Get most recently added videos (subscribers only)"""
     result = await db.execute(
         select(Video)
         .options(joinedload(Video.category))
@@ -226,21 +142,14 @@ async def get_recent_videos(
         for video in videos
     ]
 
+
 @router.put("/{video_id}", response_model=schemas.VideoResponse)
 async def update_video(
     video_id: uuid.UUID,
-    video_update: schemas.VideoUpdate,
-    thumbnail: Optional[UploadFile] = File(None),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    video_update: schemas.VideoUpdate,  # Accept JSON request body
+    db: AsyncSession = Depends(get_db)
 ):
-    """Update video details and/or thumbnail (admin only)"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can update videos"
-        )
-
+    # Fetch video
     result = await db.execute(
         select(Video).options(joinedload(Video.category)).filter(Video.id == video_id)
     )
@@ -256,31 +165,9 @@ async def update_video(
         if not category_exists.scalars().first():
             raise HTTPException(status_code=400, detail="Invalid category_id.")
 
-    # Update thumbnail if provided
-    if thumbnail:
-        if thumbnail.content_type not in ["image/jpeg", "image/png"]:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="Unsupported thumbnail type. Only JPEG and PNG are allowed."
-            )
-        
-        # Remove old thumbnail if exists
-        if video.thumbnail_url:
-            old_thumb_path = os.path.join("thumbnails", os.path.basename(video.thumbnail_url))
-            if os.path.exists(old_thumb_path):
-                os.remove(old_thumb_path)
-        
-        # Save new thumbnail
-        thumbnail_filename = f"{uuid.uuid4()}{os.path.splitext(thumbnail.filename)[1]}"
-        thumbnail_dir = "thumbnails"
-        os.makedirs(thumbnail_dir, exist_ok=True)
-        video.thumbnail_url = f"/{thumbnail_dir}/{thumbnail_filename}"
-        with open(os.path.join(thumbnail_dir, thumbnail_filename), "wb") as buffer:
-            buffer.write(await thumbnail.read())
-
-    # Apply updates
     for key, value in update_data.items():
         setattr(video, key, value)
+
 
     db.add(video)
     await db.commit()
@@ -293,133 +180,54 @@ async def update_video(
         vimeo_url=video.vimeo_url,
         vimeo_id=video.vimeo_id,
         category=video.category.name if video.category else None,
-        thumbnail_url=video.thumbnail_url
     )
 
 @router.delete("/{video_id}")
 async def delete_video(
     video_id: uuid.UUID, 
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Delete a video and its associated resources (admin only)"""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can delete videos"
-        )
-
+    video = await crud.get_video(db, video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Delete from Vimeo
     try:
-        result = await db.execute(
-            select(Video).filter(Video.id == video_id)
-        )
-        video = result.scalars().first()
-        
-        if not video:
-            raise HTTPException(status_code=404, detail="Video not found")
-
-        # Delete from Vimeo
-        if video.vimeo_id:
-            try:
-                client.delete(f"/videos/{video.vimeo_id}")
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to delete video from Vimeo: {str(e)}"
-                )
-
-        # Delete thumbnail if exists
-        if video.thumbnail_url:
-            try:
-                thumb_path = os.path.join("thumbnails", os.path.basename(video.thumbnail_url))
-                if os.path.exists(thumb_path):
-                    os.remove(thumb_path)
-            except Exception as e:
-                print(f"Failed to delete thumbnail: {str(e)}")
-
-        # Delete from database
-        await db.delete(video)
-        await db.commit()
-        
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-        
-    except HTTPException:
-        raise
+        response = client.delete(f"/videos/{video.vimeo_id}")
+        if response.status_code != 204:
+            raise HTTPException(status_code=500, detail=f"Vimeo deletion failed: {response.text}")
     except Exception as e:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=500, detail=f"Vimeo deletion failed: {str(e)}")
+    
+    await crud.delete_video(db, video)
+    return {"message": "Video deleted successfully"}
 
 @router.get("/", response_model=List[schemas.VideoResponse])
 async def read_videos(
     skip: int = 0,
     limit: int = 100,
-    category_id: Optional[uuid.UUID] = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Get paginated list of all videos with optional category filter"""
-    stmt = select(Video).options(joinedload(Video.category))
-    
-    if category_id:
-        stmt = stmt.filter(Video.category_id == category_id)
-        
-    stmt = stmt.offset(skip).limit(limit)
-    
-    result = await db.execute(stmt)
-    videos = result.scalars().all()
-    
-    return [
-        schemas.VideoResponse(
-            id=video.id,
-            title=video.title,
-            created_date=video.created_date,
-            vimeo_url=video.vimeo_url,
-            vimeo_id=video.vimeo_id,
-            category=video.category.name if video.category else None,
-            thumbnail_url=video.thumbnail_url
-        )
-        for video in videos
-    ]
+    videos = await crud.get_all_videos(db)
+    return videos
 
 @router.get("/{video_id}", response_model=schemas.VideoResponse)
 async def read_video(
     video_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Get video details by ID including like and comment counts"""
-    result = await db.execute(
-        select(Video)
-        .options(joinedload(Video.category), joinedload(Video.likes), joinedload(Video.comments))
-        .filter(Video.id == video_id)
-    )
-    video = result.scalars().first()
-
+    video = await crud.get_video(db, video_id)
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
+    return video
 
-    return schemas.VideoResponse(
-        id=video.id,
-        title=video.title,
-        created_date=video.created_date,
-        vimeo_url=video.vimeo_url,
-        vimeo_id=video.vimeo_id,
-        category=video.category.name if video.category else None,
-        thumbnail_url=video.thumbnail_url,
-        likes_count=len(video.likes),
-        comments_count=len(video.comments)
-    )
-
+# Share video endpoint (public)
 @router.get("/share/{video_id}", response_class=HTMLResponse)
 async def share_video(
     video_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Generate shareable HTML page for a video (public)"""
     result = await db.execute(
         select(Video).filter(Video.id == video_id)
     )
