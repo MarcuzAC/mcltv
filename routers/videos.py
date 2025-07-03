@@ -1,5 +1,5 @@
-from winreg import QueryReflectionKey
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile,File, Form, status
+
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
@@ -113,35 +113,11 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         "revenue": 0  # Default to 0
     }
 
-# Get recent videos
 @router.get("/recent", response_model=List[schemas.VideoResponse])
-async def get_recent_videos(
-    limit: int = QueryReflectionKey(5, description="Number of recent videos to fetch"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get most recently added videos (subscribers only)"""
-    result = await db.execute(
-        select(Video)
-        .options(joinedload(Video.category))
-        .order_by(Video.created_date.desc())
-        .limit(limit)
-    )
-    videos = result.scalars().all()
-    
-    return [
-        schemas.VideoResponse(
-            id=video.id,
-            title=video.title,
-            created_date=video.created_date,
-            vimeo_url=video.vimeo_url,
-            vimeo_id=video.vimeo_id,
-            category=video.category.name if video.category else None,
-            thumbnail_url=video.thumbnail_url
-        )
-        for video in videos
-    ]
-
+async def get_recent_videos(db: AsyncSession = Depends(get_db)):
+    """Retrieve the most recent uploaded videos."""
+    videos = await crud.get_recent_videos(db)
+    return videos
 
 @router.put("/{video_id}", response_model=schemas.VideoResponse)
 async def update_video(
