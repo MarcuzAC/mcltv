@@ -189,6 +189,22 @@ async def upload_news_image_endpoint(
     image_url = await upload_news_image(file)
     return {"url": image_url}
 
+# ─────────────────────────────
+# News Statistics
+# ─────────────────────────────
+@router.get("/stats/count")
+async def get_news_count(
+    db: AsyncSession = Depends(get_db),
+    published_only: bool = Query(True)
+):
+    """Get total count of news articles (optionally filtered by published status)."""
+    query = select(func.count(News.id))
+    if published_only:
+        query = query.where(News.is_published == True)
+    
+    total_news = (await db.execute(query)).scalar_one()
+    return {"total_news": total_news}
+
 
 # ─────────────────────────────
 # Search News
