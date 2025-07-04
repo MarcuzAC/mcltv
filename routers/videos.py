@@ -30,8 +30,8 @@ def format_video_response(video):
         vimeo_id=video.vimeo_id,
         category=video.category.name if video.category else None,
         thumbnail_url=video.thumbnail_url,
-        like_count=getattr(video, 'like_count', 0),  # Safe access with default
-        comment_count=getattr(video, 'comment_count', 0)  # Safe access with default
+        like_count=video.like_count,
+        comment_count=video.comment_count
     )
 
 @router.post("/", response_model=schemas.VideoResponse)
@@ -105,25 +105,23 @@ async def create_video(
 
 @router.get("/dashboard/stats")
 async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
-    """Retrieve comprehensive dashboard statistics"""
+    """Retrieve total users, videos, and categories. Revenue is set to 0 by default."""
     total_users = await db.scalar(func.count(User.id))
     total_videos = await db.scalar(func.count(Video.id))
     total_categories = await db.scalar(func.count(Category.id))
     total_news = await db.scalar(func.count(News.id))
-    published_news = await db.scalar(func.count(News.id).where(News.is_published == True))
 
     return {
         "total_users": total_users or 0,
         "total_videos": total_videos or 0,
         "total_categories": total_categories or 0,
         "total_news": total_news or 0,
-        "published_news": published_news or 0,
-        "revenue": 0
+        "revenue": 0  # Default to 0
     }
 
 @router.get("/recent", response_model=List[schemas.VideoResponse])
 async def get_recent_videos(db: AsyncSession = Depends(get_db)):
-    """Retrieve the most recent uploaded videos with counts"""
+    """Retrieve the most recent uploaded videos."""
     result = await db.execute(
         select(Video)
         .options(joinedload(Video.category))
@@ -139,6 +137,7 @@ async def update_video(
     video_update: schemas.VideoUpdate,
     db: AsyncSession = Depends(get_db)
 ):
+    # Fetch video with category
     result = await db.execute(
         select(Video)
         .options(joinedload(Video.category))
@@ -175,6 +174,7 @@ async def delete_video(
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
     
+    # Delete from Vimeo
     try:
         response = client.delete(f"/videos/{video.vimeo_id}")
         if response.status_code != 204:
