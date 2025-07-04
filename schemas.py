@@ -147,17 +147,19 @@ class NewsBase(BaseModel):
     content: str
 
 class NewsCreate(NewsBase):
-    pass
+    is_published: bool = False
 
 class NewsUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
+    is_published: Optional[bool] = None
 
 class NewsResponse(NewsBase):
     id: uuid.UUID
     image_url: str
     created_at: datetime
     updated_at: Optional[datetime]
+    published_at: Optional[datetime] = None
     author_id: uuid.UUID
     is_published: bool
 
@@ -168,6 +170,11 @@ class NewsListResponse(BaseModel):
     total: int
     page: int
     size: int
+
+# ==== News Growth Data ====
+class NewsGrowthData(BaseModel):
+    month: str
+    count: int
 
 # ==== Dashboard Analytics ====
 
@@ -184,5 +191,7 @@ class DashboardStatsResponse(BaseModel):
     total_videos: int
     total_categories: int
     total_news: int
+    published_news: int
     user_growth: List[UserGrowthData]
     video_categories: List[CategoryDistribution]
+    news_growth: List[NewsGrowthData]
