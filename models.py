@@ -1,6 +1,6 @@
 import uuid
 import datetime
-from sqlalchemy import Column, Index, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, Float
 from sqlalchemy.dialects.postgresql import UUID
 from database import Base
 from sqlalchemy.orm import relationship
@@ -78,22 +78,12 @@ class News(Base):
     image_url = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), index=True)
     updated_at = Column(DateTime, onupdate=func.now())
-    published_at = Column(DateTime, nullable=True, index=True)
     is_published = Column(Boolean, default=False)
+    published_at = Column(DateTime, nullable=True)
     author_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     # Relationship
     author = relationship("User", back_populates="news")
-
-    # Table args for indexes
-    __table_args__ = (
-        Index('idx_news_published', 'is_published', 'published_at'),
-    )
-
-    # Helper method to publish news
-    def publish(self):
-        self.is_published = True
-        self.published_at = datetime.utcnow()
 
 class Comment(Base):
     __tablename__ = "comments"
