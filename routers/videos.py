@@ -110,27 +110,12 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     total_videos = await db.scalar(func.count(Video.id))
     total_categories = await db.scalar(func.count(Category.id))
     total_news = await db.scalar(func.count(News.id))
-    published_news = await db.scalar(func.count(News.id).where(News.is_published == True))
-
-    news_by_month = await db.execute(
-        select(
-            func.to_char(News.created_at, 'YYYY-MM').label('month'),
-            func.count(News.id).label('count')
-        )
-        .group_by(func.date_trunc('month', News.created_at))
-        .order_by(func.date_trunc('month', News.created_at).desc())
-    )
 
     return {
         "total_users": total_users or 0,
         "total_videos": total_videos or 0,
         "total_categories": total_categories or 0,
         "total_news": total_news or 0,
-        "published_news": published_news or 0,
-        "news_growth": [
-            {"month": row['month'], "count": row['count']}
-            for row in news_by_month.all()
-        ],
         "revenue": 0  # Default to 0
     }
 
