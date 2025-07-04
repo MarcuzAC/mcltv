@@ -171,11 +171,6 @@ class NewsListResponse(BaseModel):
     page: int
     size: int
 
-# ==== News Growth Data ====
-class NewsGrowthData(BaseModel):
-    month: str
-    count: int
-
 # ==== Dashboard Analytics ====
 
 class UserGrowthData(BaseModel):
@@ -194,4 +189,3 @@ class DashboardStatsResponse(BaseModel):
     published_news: int
     user_growth: List[UserGrowthData]
     video_categories: List[CategoryDistribution]
-    news_growth: List[NewsGrowthData]

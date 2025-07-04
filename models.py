@@ -79,7 +79,6 @@ class News(Base):
     created_at = Column(DateTime, server_default=func.now(), index=True)
     updated_at = Column(DateTime, onupdate=func.now())
     is_published = Column(Boolean, default=False)
-    published_at = Column(DateTime, nullable=True)
     author_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     # Relationship
