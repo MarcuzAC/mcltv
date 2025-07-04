@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +18,21 @@ from typing import Optional
 from vimeo_client import client
 
 router = APIRouter(prefix="/videos", tags=["videos"])
+
+def format_video_response(video):
+    """Helper function to format video responses consistently"""
+    return schemas.VideoResponse(
+        id=video.id,
+        title=video.title,
+        category_id=video.category_id,
+        created_date=video.created_date,
+        vimeo_url=video.vimeo_url,
+        vimeo_id=video.vimeo_id,
+        category=video.category.name if video.category else None,
+        thumbnail_url=video.thumbnail_url,
+        like_count=video.like_count,
+        comment_count=video.comment_count
+    )
 
 @router.post("/", response_model=schemas.VideoResponse)
 async def create_video(
@@ -65,31 +79,22 @@ async def create_video(
                 vimeo_url=vimeo_data['vimeo_url'],
                 vimeo_id=vimeo_data['vimeo_id']
             )
+            await db.refresh(db_video)
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to save video to database: {str(e)}"
             )
 
-        # ✅ Convert to Pydantic Schema before returning
-        return schemas.VideoResponse(
-            id=db_video.id,
-            title=db_video.title,
-            created_date=db_video.created_date,
-            vimeo_url=db_video.vimeo_url,
-            vimeo_id=db_video.vimeo_id,
-            category=db_video.category.name if db_video.category else None  # ✅ Safe access
-        )
+        return format_video_response(db_video)
 
     except HTTPException:
         raise
-
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {str(e)}"
         )
-
     finally:
         # Cleanup temp file
         if temp_path and os.path.exists(temp_path):
@@ -97,7 +102,6 @@ async def create_video(
                 os.remove(temp_path)
             except Exception as e:
                 print(f"Failed to delete temp file: {str(e)}")
-
 
 @router.get("/dashboard/stats")
 async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
@@ -116,18 +120,26 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
 @router.get("/recent", response_model=List[schemas.VideoResponse])
 async def get_recent_videos(db: AsyncSession = Depends(get_db)):
     """Retrieve the most recent uploaded videos."""
-    videos = await crud.get_recent_videos(db)
-    return videos
+    result = await db.execute(
+        select(Video)
+        .options(joinedload(Video.category))
+        .order_by(Video.created_date.desc())
+        .limit(5)
+    )
+    videos = result.scalars().all()
+    return [format_video_response(video) for video in videos]
 
 @router.put("/{video_id}", response_model=schemas.VideoResponse)
 async def update_video(
     video_id: uuid.UUID,
-    video_update: schemas.VideoUpdate,  # Accept JSON request body
+    video_update: schemas.VideoUpdate,
     db: AsyncSession = Depends(get_db)
 ):
-    # Fetch video
+    # Fetch video with category
     result = await db.execute(
-        select(Video).options(joinedload(Video.category)).filter(Video.id == video_id)
+        select(Video)
+        .options(joinedload(Video.category))
+        .filter(Video.id == video_id)
     )
     video = result.scalars().first()
 
@@ -136,27 +148,20 @@ async def update_video(
 
     update_data = video_update.model_dump(exclude_unset=True)
 
-    if "category_id" in update_data and update_data["category_id"] is not None:
-        category_exists = await db.execute(select(Category).filter(Category.id == update_data["category_id"]))
-        if not category_exists.scalars().first():
+    if "category_id" in update_data:
+        category_exists = await db.scalar(
+            select(Category).filter(Category.id == update_data["category_id"])
+        )
+        if not category_exists:
             raise HTTPException(status_code=400, detail="Invalid category_id.")
 
     for key, value in update_data.items():
         setattr(video, key, value)
 
-
-    db.add(video)
     await db.commit()
     await db.refresh(video)
-
-    return schemas.VideoResponse(
-        id=video.id,
-        title=video.title,
-        created_date=video.created_date,
-        vimeo_url=video.vimeo_url,
-        vimeo_id=video.vimeo_id,
-        category=video.category.name if video.category else None,
-    )
+    
+    return format_video_response(video)
 
 @router.delete("/{video_id}")
 async def delete_video(
@@ -184,20 +189,32 @@ async def read_videos(
     limit: int = 100,
     db: AsyncSession = Depends(get_db)
 ):
-    videos = await crud.get_all_videos(db)
-    return videos
+    result = await db.execute(
+        select(Video)
+        .options(joinedload(Video.category))
+        .offset(skip)
+        .limit(limit)
+    )
+    videos = result.scalars().all()
+    return [format_video_response(video) for video in videos]
 
 @router.get("/{video_id}", response_model=schemas.VideoResponse)
 async def read_video(
     video_id: uuid.UUID,
     db: AsyncSession = Depends(get_db)
 ):
-    video = await crud.get_video(db, video_id)
+    result = await db.execute(
+        select(Video)
+        .options(joinedload(Video.category))
+        .filter(Video.id == video_id)
+    )
+    video = result.scalars().first()
+    
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-    return video
+    
+    return format_video_response(video)
 
-# Share video endpoint (public)
 @router.get("/share/{video_id}", response_class=HTMLResponse)
 async def share_video(
     video_id: uuid.UUID,

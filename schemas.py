@@ -86,6 +86,7 @@ class VideoResponse(VideoBase):
     vimeo_url: Optional[str] = None
     vimeo_id: Optional[str] = None
     category: Optional[str] = None
+    category_id: Optional[uuid.UUID] = None
     thumbnail_url: Optional[str] = None
     like_count: int = 0
     comment_count: int = 0
