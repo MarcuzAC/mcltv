@@ -45,8 +45,8 @@ class Video(Base):
     category_id = Column(UUID(as_uuid=True), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
     vimeo_url = Column(String)
     vimeo_id = Column(String)
-    like_count = Column(Integer, default=0)
-    comment_count = Column(Integer, default=0)
+    like_count = Column(Integer, default=0, nullable=False)
+    comment_count = Column(Integer, default=0, nullable=False)
 
     category = relationship("Category", back_populates="videos")
     
