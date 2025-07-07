@@ -21,6 +21,14 @@ router = APIRouter(prefix="/videos", tags=["videos"])
 
 def format_video_response(video):
     """Helper function to format video responses consistently"""
+    category_obj = None
+    if video.category:
+        category_obj = schemas.CategoryOut(
+            id=video.category.id,
+            name=video.category.name,
+            created_at=video.category.created_at
+        )
+
     return schemas.VideoResponse(
         id=video.id,
         title=video.title,
@@ -28,11 +36,12 @@ def format_video_response(video):
         created_date=video.created_date,
         vimeo_url=video.vimeo_url,
         vimeo_id=video.vimeo_id,
-        category=video.category.name if video.category else None,
+        category=category_obj,
         thumbnail_url=video.thumbnail_url,
         like_count=video.like_count,
         comment_count=video.comment_count
     )
+
 
 @router.post("/", response_model=schemas.VideoResponse)
 async def create_video(
