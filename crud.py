@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
+from psycopg2 import IntegrityError
 from sqlalchemy import and_, or_, update, func, select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -204,34 +205,30 @@ async def get_recent_videos(db: AsyncSession, limit: int = 5) -> List[models.Vid
 
 # ====================== LIKE OPERATIONS ======================
 
-async def add_like(db: AsyncSession, like: schemas.LikeCreate) -> models.Like:
-    # Check for existing like
-    existing_like = await db.scalar(
-        select(models.Like)
-        .where(models.Like.user_id == like.user_id)
-        .where(models.Like.video_id == like.video_id)
-    )
-    if existing_like:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User has already liked this video"
+# In crud.py
+async def add_like(db: AsyncSession, like: schemas.LikeCreateWithUser) -> models.Like:
+    """Add a like to a video"""
+    try:
+        # Create new like
+        db_like = models.Like(
+            user_id=like.user_id,
+            video_id=like.video_id
         )
-    
-    # Create new like
-    db_like = models.Like(**like.dict())
-    db.add(db_like)
-    
-    # Update video like count
-    await db.execute(
-        update(models.Video)
-        .where(models.Video.id == like.video_id)
-        .values(like_count=models.Video.like_count + 1)
-    )
-    
-    await db.commit()
-    await db.refresh(db_like)
-    return db_like
-
+        db.add(db_like)
+        
+        # Update video like count
+        await db.execute(
+            update(models.Video)
+            .where(models.Video.id == like.video_id)
+            .values(like_count=models.Video.like_count + 1)
+        )
+        
+        await db.commit()
+        await db.refresh(db_like)
+        return db_like
+    except Exception as e:
+        await db.rollback()
+        raise ValueError(f"Failed to add like: {str(e)}")
 async def remove_like(db: AsyncSession, user_id: uuid.UUID, video_id: uuid.UUID) -> models.Like:
     # Find and delete like
     result = await db.execute(

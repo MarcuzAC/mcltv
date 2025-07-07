@@ -101,20 +101,19 @@ class Token(BaseModel):
 
 # ==== Like Schemas ====
 
-class LikeBase(BaseModel):
-    user_id: uuid.UUID
+class LikeCreate(BaseModel):
     video_id: uuid.UUID
-
-class LikeCreate(LikeBase):
-    pass
-
-class LikeResponse(LikeBase):
+# In schemas.py - Add this new schema
+class LikeCreateWithUser(LikeCreate):
+    user_id: uuid.UUID
+class LikeResponse(BaseModel):
     id: uuid.UUID
     created_at: datetime
     user: Optional[UserResponse] = None
     video: Optional[VideoResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
+
 
 # ==== Comment Schemas ====
 
