@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from typing import List
 import uuid
 
@@ -20,7 +21,6 @@ async def add_comment(
     current_user: User = Depends(get_current_user)
 ):
     """Add a new comment to a video"""
-    # Check if video exists
     video_exists = await db.scalar(
         select(models.Video.id).where(models.Video.id == comment.video_id)
     )
@@ -28,12 +28,25 @@ async def add_comment(
         raise HTTPException(status_code=404, detail="Video not found")
     
     try:
+        # Add comment
         db_comment = await crud.add_comment(
             db=db, 
             comment=comment, 
             user_id=current_user.id
         )
-        return schemas.CommentResponse.model_validate(db_comment)
+
+        # Re-fetch comment with joined relationships
+        result = await db.execute(
+            select(models.Comment)
+            .options(
+                joinedload(models.Comment.user),
+                joinedload(models.Comment.video).joinedload(models.Video.category)
+            )
+            .where(models.Comment.id == db_comment.id)
+        )
+        comment_with_relations = result.scalars().first()
+        return schemas.CommentResponse.model_validate(comment_with_relations)
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -53,21 +66,19 @@ async def get_comments(
         raise HTTPException(status_code=404, detail="Video not found")
     
     try:
-        comments = await crud.get_comments(db=db, video_id=video_id)
-        return [
-            schemas.CommentResponse(
-                id=comment.id,
-                text=comment.text,
-                created_at=comment.created_at,
-                updated_at=comment.updated_at,
-                user=schemas.UserBase(
-                    id=comment.user.id,
-                    username=comment.user.username,
-                    avatar_url=comment.user.avatar_url
-                )
+        result = await db.execute(
+            select(models.Comment)
+            .options(
+                joinedload(models.Comment.user),
+                joinedload(models.Comment.video).joinedload(models.Video.category)
             )
-            for comment in comments
-        ]
+            .where(models.Comment.video_id == video_id)
+            .order_by(models.Comment.created_at.desc())
+        )
+        comments = result.scalars().all()
+
+        return [schemas.CommentResponse.model_validate(comment) for comment in comments]
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -89,7 +100,20 @@ async def update_comment(
             new_text=updated_data.text,
             user_id=current_user.id
         )
-        return schemas.CommentResponse.model_validate(updated_comment)
+
+        # Re-fetch with relations
+        result = await db.execute(
+            select(models.Comment)
+            .options(
+                joinedload(models.Comment.user),
+                joinedload(models.Comment.video).joinedload(models.Video.category)
+            )
+            .where(models.Comment.id == updated_comment.id)
+        )
+        comment_with_relations = result.scalars().first()
+
+        return schemas.CommentResponse.model_validate(comment_with_relations)
+
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND if "not found" in str(e).lower() 

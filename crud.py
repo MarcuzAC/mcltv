@@ -274,7 +274,6 @@ async def has_user_liked(db: AsyncSession, user_id: uuid.UUID, video_id: uuid.UU
     return result is not None
 
 # ====================== COMMENT OPERATIONS ======================
-
 async def add_comment(
     db: AsyncSession, 
     comment: schemas.CommentCreate, 
@@ -286,26 +285,28 @@ async def add_comment(
         text=comment.text
     )
     db.add(db_comment)
-    
+
     # Update video comment count
     await db.execute(
         update(models.Video)
         .where(models.Video.id == comment.video_id)
         .values(comment_count=models.Video.comment_count + 1)
     )
-    
+
     await db.commit()
     await db.refresh(db_comment)
-    return db_comment
 
-async def get_comments(db: AsyncSession, video_id: uuid.UUID) -> List[models.Comment]:
+    # Re-fetch the comment with user and video eagerly loaded
     result = await db.execute(
         select(models.Comment)
-        .options(joinedload(models.Comment.user))
-        .where(models.Comment.video_id == video_id)
-        .order_by(models.Comment.created_at.desc())
+        .options(
+            selectinload(models.Comment.user),
+            selectinload(models.Comment.video)
+        )
+        .where(models.Comment.id == db_comment.id)
     )
-    return result.scalars().all()
+    return result.scalar_one()
+
 
 async def get_comment_count(db: AsyncSession, video_id: uuid.UUID) -> int:
     result = await db.scalar(
@@ -314,14 +315,20 @@ async def get_comment_count(db: AsyncSession, video_id: uuid.UUID) -> int:
     )
     return result or 0
 
+
 async def update_comment(
     db: AsyncSession, 
     comment_id: uuid.UUID, 
     new_text: str, 
     user_id: uuid.UUID
 ) -> models.Comment:
+
     result = await db.execute(
         select(models.Comment)
+        .options(
+            selectinload(models.Comment.user),
+            selectinload(models.Comment.video).selectinload(models.Video.category)
+        )
         .where(models.Comment.id == comment_id)
     )
     comment = result.scalars().first()
@@ -341,6 +348,7 @@ async def update_comment(
     comment.updated_at = func.now()
     await commit_and_refresh(db, comment)
     return comment
+
 
 async def delete_comment(
     db: AsyncSession, 
