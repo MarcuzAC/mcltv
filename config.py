@@ -21,6 +21,8 @@ class Settings:
 
     PAYCHANGU_SECRET_KEY = os.getenv("PAYCHANGU_SECRET_KEY")
 
+    APK_DOWNLOAD_URL = os.getenv("APK_DOWNLOAD_URL")
+
     def __init__(self):
         self._supabase = create_client(self.SUPABASE_URL, self.SUPABASE_PRIVATE_KEY)
 

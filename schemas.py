@@ -188,3 +188,6 @@ class DashboardStatsResponse(BaseModel):
     published_news: int
     user_growth: List[UserGrowthData]
     video_categories: List[CategoryDistribution]
+class ApkDownloadUrl(BaseModel):
+    url: str
+    updated_at: Optional[datetime] = None

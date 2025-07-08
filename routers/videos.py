@@ -16,6 +16,8 @@ from models import User, Video, Category, News
 from sqlalchemy.orm import joinedload
 from typing import Optional
 from vimeo_client import client
+from datetime import datetime
+from config import settings
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
@@ -242,7 +244,9 @@ async def share_video(
 
     user_agent = request.headers.get("user-agent", "").lower()
     is_android = "android" in user_agent
-    apk_download_url = "https://www.mediafire.com/file/uj2s3y6nmkkze12/mlctv.apk/file"
+    
+    # Use the APK_DOWNLOAD_URL from settings
+    apk_download_url = settings.APK_DOWNLOAD_URL
     
     html_content = f"""
     <!DOCTYPE html>
@@ -252,6 +256,9 @@ async def share_video(
         <meta property="og:description" content="Watch this video in MCL TV app.">
         <meta property="og:image" content="{request.base_url}{video.thumbnail_url.lstrip('/') if video.thumbnail_url else ''}">
         <meta property="og:url" content="{request.url}">
+        <meta property="al:android:url" content="mlctv://video/{video_id}">
+        <meta property="al:android:package" content="com.example.mlctv">
+        <meta property="al:android:app_name" content="MCL TV">
         <script>
             function redirectToApp() {{
                 window.location.href = 'mlctv://video/{video_id}';
@@ -266,7 +273,7 @@ async def share_video(
         <div style="text-align: center; padding: 50px;">
             <h1>{video.title}</h1>
             {"<p>For the best experience, please install our Android app.</p>" if is_android else "<p>This content is available on Android devices only.</p>"}
-            {"<a href='{apk_download_url}'><button style='padding: 10px 20px; background-color: #4285F4; color: white; border: none; border-radius: 5px; font-size: 16px;'>Download Android App</button></a>" if is_android else ""}
+            <a href='{apk_download_url}'><button style='padding: 10px 20px; background-color: #4285F4; color: white; border: none; border-radius: 5px; font-size: 16px;'>Download Android App</button></a>
         </div>
     </body>
     </html>
